@@ -1,0 +1,32 @@
+<?php
+/**
+ * @file
+ * Install file.
+ */
+
+/**
+ * Implement hook schema().
+ */
+function drupmood_schema() {
+  $schema['drupmood_users'] = array(
+    'description' => 'Stores user data.',
+    'fields' => array(
+      'uid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Unique user ID.',
+        'default' => 0,
+      ),
+      'idnumbers' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'idnumbers from moodle using webservices.',
+        'default' => 0,
+      ),
+    ),
+    //'primary key' => array('uid'),
+  );
+  return $schema;
+}
