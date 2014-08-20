@@ -1,0 +1,5 @@
+name = "USER SYNC IN MOODLE"
+description = "user sync with moodle when user register, update and delete."
+version = "7.x"
+core = "7.x"
+project = "DRUPMOOD"

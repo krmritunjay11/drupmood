@@ -1,0 +1,136 @@
+<?php
+/**
+ * @file
+ * Module file.
+ */
+
+/**
+ * Hook menu().
+ */
+function drupmood_menu() {
+  $items['admin/config/system/lmspath'] = array(
+    'title' => 'Moodel Path Setting',
+    'description' => 'Configure settings for lms(Moodle).',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('set_lms_path_form'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'set_moodle_path.admin.inc',
+    'type' => MENU_NORMAL_ITEM,
+  );
+  return $items;
+}
+
+/**
+ * Hook user insert().
+ */
+function drupmood_user_insert(&$edit, $account, $category) {
+  $func_name = 'core_user_create_users';
+  // Parameters collection.
+  $users_for_moodle = new stdClass();
+  $users_for_moodle->username = strtolower($account->name);
+  $users_for_moodle->password = $account->pass;
+  $users_for_moodle->firstname = $account->field_first_name['und'][0]['value'];
+  $users_for_moodle->lastname = $account->field_last_name['und'][0]['value'];
+  $users_for_moodle->city = 'Not Set'; //ucwords($account->field_address['und'][0]['city']);
+  $users_for_moodle->country = strtoupper($account->field_address['und'][0]['country']);
+  $users_for_moodle->email = strtolower($account->mail);
+  $users_for_moodle->idnumber = $account->uid;
+  $users_for_moodle->auth = 'drupalservices';
+  $params = array($users_for_moodle);
+
+  $resp = send_request_to_moodle($func_name, $params);
+  if (isset($resp[0]['id'])) {
+    db_insert('drupmood_users')
+      ->fields(array('uid' => $account->uid, 'idnumbers' => $resp[0]['id']))
+      ->execute();
+  }
+}
+
+/**
+ * Hook user update().
+ */
+function drupmood_user_update(&$edit, $account, $category) {
+  if ($account->picture) {
+    $file = file_load($account->picture);
+    $uri = $file->uri;
+    $picture = file_create_url($uri);
+  }
+  else {
+    $picture = file_create_url(variable_get('user_picture_default', ''));
+  }
+  if ($account->login != 0 || $account->access != 0) {
+    $result = db_select('drupmood_users', 'ui')
+      ->fields('ui')->condition('uid', $account->uid, '=')
+      ->execute()->fetchAssoc();
+
+    $users_for_moodle = new stdClass();
+
+    if (!empty($result['idnumbers'])) {
+      $func_name = 'core_user_update_users';
+      $users_for_moodle->id = $result['idnumbers'];
+    }
+    else {
+      $func_name = 'core_user_create_users';
+    }
+
+    $f_name = $account->field_first_name['und'][0]['value'];
+    $l_name = $account->field_last_name['und'][0]['value'];
+    $city = $account->field_address['und'][0]['city'];
+    $country = $account->field_address['und'][0]['country'];
+    // Parameters collection.
+    $users_for_moodle->username = strtolower($account->name);
+    $users_for_moodle->password = $account->pass;
+    $users_for_moodle->firstname = (isset($f_name)) ? $f_name : $account->name;
+    $users_for_moodle->lastname = (isset($l_name)) ? $l_name : $account->name;
+    $users_for_moodle->city = (isset($city)) ? ucwords($city) : 'Not Set';
+    $users_for_moodle->country = (isset($country)) ? strtoupper($country) : 'US';
+    $users_for_moodle->userprofileimageurl = (isset($picture)) ? $picture : '';
+    $users_for_moodle->email = strtolower($account->mail);
+    $users_for_moodle->idnumber = $account->uid;
+    $users_for_moodle->auth = 'drupalservices';
+    $params = array($users_for_moodle);
+
+    $resp = send_request_to_moodle($func_name, $params);
+
+    if (empty($result['idnumbers'])) {
+      if (isset($resp[0]['id'])) {
+        db_insert('drupmood_users')
+          ->fields(array('uid' => $account->uid, 'idnumbers' => $resp[0]['id']))
+          ->execute();
+      }
+    }
+  }
+}
+
+/**
+ * Hook user delete().
+ */
+function drupmood_user_delete($account) {
+  $result = db_select('drupmood_users', 'ui')
+    ->fields('ui')->condition('uid', $account->uid, '=')
+    ->execute()->fetchAssoc();
+
+  $func_name = 'core_user_delete_users';
+  $params[] = $result['idnumbers'];
+  send_request_to_moodle($func_name, $params);
+
+  db_delete('drupmood_users')->condition('uid', $account->uid, '=')->execute();
+}
+
+/**
+ * Webservice call().
+ */
+function send_request_to_moodle($func, $params) {
+  module_load_include('php', 'drupmood', 'phprest/curl');
+
+  $resp = array();
+  $token = variable_get('websevices_token');
+  $domainname = variable_get('set_lms_path');
+  // XML-RPC call.
+  header('Content-Type: text/plain');
+  $serverurl = $domainname . '/webservice/xmlrpc/server.php' . '?wstoken=' . $token;
+  $curl = new curl;
+  $post = xmlrpc_encode_request($func, array($params));
+  $resp = xmlrpc_decode($curl->post($serverurl, $post));
+  return $resp;
+}
